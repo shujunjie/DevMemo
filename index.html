@@ -124,7 +124,7 @@
             Code, Terminal, Save, X, Filter, LayoutGrid, List as ListIcon, 
             Bug, Lightbulb, Zap, Archive, Database, HelpCircle, Image as ImageIcon,
             Loader2, Upload, FileUp, AlignLeft, Calendar, Hash, AlertTriangle, Link as LinkIcon, Copy,
-            CalendarDays, CalendarClock, Cpu, ShieldCheck, ChevronDown, Moon, Sun, Eye, Check
+            CalendarDays, CalendarClock, Cpu, ShieldCheck, ChevronDown, Moon, Sun, Eye, Check, Layers
         } from 'https://esm.sh/lucide-react@0.263.1';
 
         const React = window.React;
@@ -159,7 +159,23 @@
             DONE: { label: '已完成', icon: CheckCircle, color: 'bg-green-500/10 text-green-600 dark:text-green-400' },
         };
 
-        // --- New Custom Select Component ---
+        // --- Utils ---
+        const parseImages = (imgData) => {
+            if (!imgData) return [];
+            // Try parsing JSON array
+            try {
+                const parsed = JSON.parse(imgData);
+                if (Array.isArray(parsed)) return parsed;
+                // If it's a valid JSON but not array, wrap it (rare case)
+                return [imgData]; 
+            } catch (e) {
+                // Not JSON, treat as single URL string
+                return [imgData];
+            }
+        };
+
+        // --- Components ---
+
         const CustomSelect = ({ value, onChange, options, placeholder, icon: Icon, className = "" }) => {
             const [isOpen, setIsOpen] = useState(false);
             const containerRef = useRef(null);
@@ -184,7 +200,6 @@
                         className="glass-input w-full pl-4 pr-10 py-2.5 text-sm text-left flex items-center gap-2 rounded-xl transition-all shadow-sm focus:ring-4 focus:ring-[#0071E3]/10 h-full"
                     >
                         {Icon && <Icon className="h-4 w-4 text-gray-500 dark:text-gray-400" />}
-                        {/* 优先显示选项的 icon */}
                         {selectedOption && selectedOption.icon && (
                             <div className={`p-0.5 rounded ${selectedOption.color ? selectedOption.color.split(' ')[0] : ''}`}>
                                 <selectedOption.icon className={`h-4 w-4 ${selectedOption.color ? selectedOption.color.split(' ')[0].replace('bg-', 'text-') : ''}`} />
@@ -316,6 +331,9 @@
             const priorityStyle = PRIORITY_LEVELS[item.priority] || PRIORITY_LEVELS.LOW;
             const statusMeta = STATUSES[item.status] || STATUSES.TODO;
             const handleCopy = () => { navigator.clipboard.writeText(`# ${item.title}\n\n${item.description}`); };
+            
+            // Parse images
+            const images = parseImages(item.image_url);
 
             return (
                 <GlassModal isOpen={true} onClose={onClose} title="需求详情" maxWidth="max-w-5xl">
@@ -344,13 +362,21 @@
                                 </div>
                             </div>
                             <div className="space-y-4 lg:col-span-1">
-                                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-200 uppercase tracking-wider mb-3">附件</h3>
-                                {item.image_url ? (
-                                    <div className="rounded-2xl overflow-hidden border border-gray-200 dark:border-white/10 shadow-sm group cursor-zoom-in relative bg-gray-100 dark:bg-gray-800" onClick={() => onImageClick(item.image_url)}>
-                                        <img src={item.image_url} alt="Attachment" className="w-full h-auto object-contain max-h-[400px] transition-transform duration-500 group-hover:scale-[1.02]" />
-                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                                            <div className="bg-black/60 text-white px-4 py-2 rounded-full text-sm font-medium backdrop-blur-md flex items-center gap-2"><Eye className="h-4 w-4" /> 点击预览大图</div>
-                                        </div>
+                                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-200 uppercase tracking-wider mb-3">附件 ({images.length})</h3>
+                                {images.length > 0 ? (
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {images.map((url, idx) => (
+                                            <div 
+                                                key={idx}
+                                                className={`rounded-xl overflow-hidden border border-gray-200 dark:border-white/10 shadow-sm group cursor-zoom-in relative bg-gray-100 dark:bg-gray-800 ${images.length === 1 ? 'col-span-2 aspect-video' : 'aspect-square'}`}
+                                                onClick={() => onImageClick(url)}
+                                            >
+                                                <img src={url} alt={`Attachment ${idx + 1}`} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                                    <Eye className="h-6 w-6 text-white drop-shadow-md" />
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 ) : (
                                     <div className="rounded-2xl border-2 border-dashed border-gray-200 dark:border-white/10 h-40 flex flex-col items-center justify-center text-gray-400 gap-2"><ImageIcon className="h-6 w-6 opacity-30" /><span className="text-xs">无图片附件</span></div>
@@ -395,9 +421,24 @@
             const [previewImage, setPreviewImage] = useState(null);
             const [uploading, setUploading] = useState(false);
             const [isDragging, setIsDragging] = useState(false);
-            const [formData, setFormData] = useState({ title: '', description: '', type: 'FEATURE', priority: 'MEDIUM', status: 'TODO', image_url: '', due_date: '' });
+            // formData.images stores array of URLs
+            const [formData, setFormData] = useState({ title: '', description: '', type: 'FEATURE', priority: 'MEDIUM', status: 'TODO', images: [], due_date: '' });
             const [toast, setToast] = useState(null);
             const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null, isDangerous: false });
+
+            // Define options inside App component to ensure they are available in render scope
+            const filterTypeOptions = useMemo(() => [
+                { value: 'ALL', label: '类型: 全部' },
+                ...Object.entries(TYPES).map(([key, val]) => ({ value: key, label: val.label, icon: val.icon, color: val.color }))
+            ], []);
+
+            const filterStatusOptions = useMemo(() => [
+                { value: 'ALL', label: '状态: 全部' },
+                ...Object.entries(STATUSES).map(([key, val]) => ({ value: key, label: val.label, icon: val.icon, color: val.color }))
+            ], []);
+
+            const formTypeOptions = useMemo(() => Object.entries(TYPES).map(([key, val]) => ({ value: key, label: val.label, icon: val.icon, color: val.color })), []);
+            const formPriorityOptions = useMemo(() => Object.entries(PRIORITY_LEVELS).map(([key, val]) => ({ value: key, label: val.label, color: val.color })), []);
 
             const showToast = (message, type = 'success') => setToast({ message, type });
             const closeToast = () => setToast(null);
@@ -438,49 +479,95 @@
                 setUploading(false);
                 if (req) {
                     setEditingId(req.id);
-                    setFormData({ title: req.title, description: req.description, type: req.type, priority: req.priority, status: req.status, image_url: req.image_url || '', due_date: req.due_date ? req.due_date.split('T')[0] : '' });
+                    setFormData({ 
+                        title: req.title, 
+                        description: req.description, 
+                        type: req.type, 
+                        priority: req.priority, 
+                        status: req.status, 
+                        images: parseImages(req.image_url), 
+                        due_date: req.due_date ? req.due_date.split('T')[0] : '' 
+                    });
                 } else {
                     setEditingId(null);
-                    setFormData({ title: '', description: '', type: 'FEATURE', priority: 'MEDIUM', status: 'TODO', image_url: '', due_date: '' });
+                    setFormData({ title: '', description: '', type: 'FEATURE', priority: 'MEDIUM', status: 'TODO', images: [], due_date: '' });
                 }
                 setIsModalOpen(true);
             };
 
-            const uploadFileToSupabase = async (file) => {
+            const uploadFiles = async (files) => {
                 setUploading(true);
+                const newUrls = [];
                 try {
-                    if (formData.image_url) deleteImageFromStorage(formData.image_url);
-                    const fileExt = file.name.split('.').pop();
-                    const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 5)}.${fileExt}`;
-                    const filePath = `public/${fileName}`;
-                    const { error } = await supabase.storage.from(BUCKET_NAME).upload(filePath, file);
-                    if (error) throw error;
-                    const { data } = supabase.storage.from(BUCKET_NAME).getPublicUrl(filePath);
-                    setFormData(prev => ({ ...prev, image_url: data.publicUrl }));
-                    showToast("图片上传成功");
+                    for (let i = 0; i < files.length; i++) {
+                        const file = files[i];
+                        const fileExt = file.name.split('.').pop();
+                        const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 5)}.${fileExt}`;
+                        const filePath = `public/${fileName}`;
+                        const { error } = await supabase.storage.from(BUCKET_NAME).upload(filePath, file);
+                        if (error) throw error;
+                        const { data } = supabase.storage.from(BUCKET_NAME).getPublicUrl(filePath);
+                        newUrls.push(data.publicUrl);
+                    }
+                    
+                    setFormData(prev => ({
+                        ...prev,
+                        images: [...prev.images, ...newUrls]
+                    }));
+                    showToast(`成功上传 ${files.length} 张图片`);
                 } catch (error) { showToast(`上传失败: ${error.message}`, 'error'); } finally { setUploading(false); }
             };
 
-            const handleFileChange = (e) => { const file = e.target.files[0]; if (file) { uploadFileToSupabase(file); e.target.value = ''; } };
+            const handleFileChange = (e) => { 
+                const files = e.target.files; 
+                if (files && files.length > 0) { 
+                    uploadFiles(files); 
+                    e.target.value = ''; 
+                } 
+            };
             const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
             const handleDragLeave = (e) => { e.preventDefault(); setIsDragging(false); };
-            const handleDrop = (e) => { e.preventDefault(); setIsDragging(false); const files = e.dataTransfer.files; if (files && files.length > 0) { if (files[0].type.startsWith('image/')) uploadFileToSupabase(files[0]); else showToast('请上传图片文件', 'error'); } };
+            const handleDrop = (e) => { 
+                e.preventDefault(); 
+                setIsDragging(false); 
+                const files = e.dataTransfer.files; 
+                if (files && files.length > 0) { 
+                    uploadFiles(files); 
+                } 
+            };
 
-            const handleRemoveImageTrigger = (e) => {
+            const handleRemoveImage = (index, e) => {
                 e.preventDefault(); e.stopPropagation();
-                if (!formData.image_url) return;
                 openConfirm("移除图片", "确定要移除这张图片吗？这将删除已上传的文件。", () => {
-                    const url = formData.image_url;
-                    setFormData(prev => ({ ...prev, image_url: '' }));
-                    deleteImageFromStorage(url);
-                    showToast("图片已移除");
+                    const urlToDelete = formData.images[index];
+                    const newImages = formData.images.filter((_, i) => i !== index);
+                    
+                    setFormData(prev => ({ ...prev, images: newImages }));
+                    
+                    // Background delete
+                    deleteImageFromStorage(urlToDelete);
+                    
                     closeConfirm();
                 }, true);
             };
 
             const handleSubmit = async (e) => {
                 if (e) e.preventDefault();
-                const payload = { ...formData, due_date: formData.due_date || null, updated_at: new Date().toISOString(), user_id: DEFAULT_USER };
+                // Store images array as JSON string in image_url field
+                const imageJson = JSON.stringify(formData.images);
+                
+                const payload = { 
+                    title: formData.title,
+                    description: formData.description,
+                    type: formData.type,
+                    priority: formData.priority,
+                    status: formData.status,
+                    image_url: imageJson,
+                    due_date: formData.due_date || null, 
+                    updated_at: new Date().toISOString(), 
+                    user_id: DEFAULT_USER 
+                };
+                
                 try {
                     if (editingId) {
                         const { error } = await supabase.from('requirements').update(payload).eq('id', editingId);
@@ -500,7 +587,10 @@
                 if (e) e.stopPropagation();
                 openConfirm("删除需求", "确定要删除这条需求吗？此操作无法撤销。", async () => {
                     try {
-                        if (req.image_url) deleteImageFromStorage(req.image_url);
+                        const images = parseImages(req.image_url);
+                        // Delete all associated images
+                        images.forEach(url => deleteImageFromStorage(url));
+                        
                         const { error } = await supabase.from('requirements').delete().eq('id', req.id);
                         if (error) throw error;
                         showToast("删除成功");
@@ -520,20 +610,6 @@
                     showToast(`状态更新: ${STATUSES[nextStatus].label}`);
                 } catch (err) { console.error("Status Error:", err); }
             };
-
-            // Prepare options for CustomSelect
-            const filterTypeOptions = useMemo(() => [
-                { value: 'ALL', label: '类型: 全部' },
-                ...Object.entries(TYPES).map(([key, val]) => ({ value: key, label: val.label, icon: val.icon, color: val.color }))
-            ], []);
-
-            const filterStatusOptions = useMemo(() => [
-                { value: 'ALL', label: '状态: 全部' },
-                ...Object.entries(STATUSES).map(([key, val]) => ({ value: key, label: val.label, icon: val.icon, color: val.color }))
-            ], []);
-
-            const formTypeOptions = useMemo(() => Object.entries(TYPES).map(([key, val]) => ({ value: key, label: val.label, icon: val.icon, color: val.color })), []);
-            const formPriorityOptions = useMemo(() => Object.entries(PRIORITY_LEVELS).map(([key, val]) => ({ value: key, label: val.label, color: val.color })), []);
 
             const filteredRequirements = useMemo(() => requirements.filter(req => {
                 const matchesSearch = (req.title || '').toLowerCase().includes(searchTerm.toLowerCase()) || (req.description || '').toLowerCase().includes(searchTerm.toLowerCase());
@@ -622,6 +698,8 @@
                                 {filteredRequirements.map(req => {
                                     const TypeIcon = TYPES[req.type]?.icon || Lightbulb;
                                     const priorityStyle = PRIORITY_LEVELS[req.priority] || PRIORITY_LEVELS.LOW;
+                                    const images = parseImages(req.image_url);
+                                    
                                     return (
                                         <div 
                                             key={req.id} 
@@ -651,9 +729,10 @@
                                                     
                                                     <div className="flex items-center gap-3">
                                                         <DueDateBadge date={req.due_date} />
-                                                        {req.image_url && (
+                                                        {images.length > 0 && (
                                                             <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-md">
-                                                                <ImageIcon className="h-3 w-3" /> 图片
+                                                                <ImageIcon className="h-3 w-3" />
+                                                                <span>{images.length > 1 ? `图片 +${images.length}` : '图片'}</span>
                                                             </div>
                                                         )}
                                                     </div>
@@ -733,25 +812,37 @@
                             
                             {/* Image Upload */}
                             <div>
-                                <label className="mb-2 block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">附件</label>
-                                <div className="flex items-start gap-4">
+                                <label className="mb-2 block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">附件 ({formData.images.length})</label>
+                                <div className="space-y-4">
                                     <div 
                                         className={`relative flex-1 group transition-all duration-200`}
                                         onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
                                     >
-                                        <input type="file" accept="image/*" onChange={handleFileChange} disabled={uploading} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed" />
-                                        <button type="button" className={`w-full flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-sm transition-colors h-40 ${isDragging ? 'border-[#0071E3] bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-gray-800 text-gray-400 hover:border-gray-300 dark:hover:border-white/20 hover:bg-gray-100 dark:hover:bg-gray-700'} ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                        <input type="file" accept="image/*" multiple onChange={handleFileChange} disabled={uploading} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed" />
+                                        <button type="button" className={`w-full flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-sm transition-colors h-32 ${isDragging ? 'border-[#0071E3] bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-gray-800 text-gray-400 hover:border-gray-300 dark:hover:border-white/20 hover:bg-gray-100 dark:hover:bg-gray-700'} ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                             {uploading ? <Loader2 className="h-6 w-6 animate-spin text-[#0071E3]" /> : <div className={`p-3 rounded-full ${isDragging ? 'bg-blue-100 dark:bg-blue-900 text-[#0071E3]' : 'bg-white dark:bg-gray-700 shadow-sm text-gray-400'}`}><FileUp className="h-6 w-6" /></div>}
-                                            <span className="text-xs font-medium">{uploading ? '上传中...' : '点击或拖入图片'}</span>
+                                            <span className="text-xs font-medium">{uploading ? '上传中...' : '点击或拖入多张图片'}</span>
                                         </button>
                                     </div>
 
-                                    {formData.image_url && (
-                                        <div className="relative h-40 w-40 rounded-xl overflow-hidden border border-gray-200 dark:border-white/10 shadow-sm group shrink-0" onClick={() => setPreviewImage(formData.image_url)}>
-                                            <img src={formData.image_url} alt="Preview" className="h-full w-full object-cover transition-opacity hover:opacity-90 cursor-zoom-in" />
-                                            <button type="button" onClick={handleRemoveImageTrigger} className="absolute top-2 right-2 p-1.5 rounded-full bg-white/90 text-red-500 shadow-sm hover:bg-red-500 hover:text-white transition-all cursor-pointer z-20" title="移除">
-                                                <X className="h-4 w-4" />
-                                            </button>
+                                    {/* Uploaded Images List */}
+                                    {formData.images.length > 0 && (
+                                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                                            {formData.images.map((url, idx) => (
+                                                <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 dark:border-white/10 shadow-sm group">
+                                                    <img src={url} alt={`Upload ${idx}`} className="w-full h-full object-cover" />
+                                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                        <button 
+                                                            type="button" 
+                                                            onClick={(e) => handleRemoveImage(idx, e)}
+                                                            className="p-2 rounded-full bg-red-500 text-white hover:bg-red-600 transition-colors shadow-lg"
+                                                            title="移除图片"
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
                                     )}
                                 </div>
